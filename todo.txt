@@ -1,0 +1,20 @@
+GENERAL
+Credit categorisation
+Ability to change user account name
+Categorisation undo option
+Ability to browse raw data between dates, or month-by-month to correct categories
+Current account overviews
+Monthly breakdowns per category
+Exporting of graphs
+View and modify active categories
+Integrate with default .cvs from different banks
+Users can specify transactions which should not be automatically categorised
+Git-style ability to generate diffs of the spreadsheets and thus undo previously added work.
+Smart account prediction
+
+OPTIONS
+dupratio
+Date format
+Change layout of input .cvs
+
+
