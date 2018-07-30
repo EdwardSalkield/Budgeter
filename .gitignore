@@ -1,0 +1,9 @@
+*.swp
+*.csv
+*.json
+budgeterold.py
+__pycache__/
+userdata
+*.spec
+build/
+dist/

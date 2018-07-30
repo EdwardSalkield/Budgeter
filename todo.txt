@@ -1,5 +1,10 @@
+BUGS
+Crash if default user removed
+
 GENERAL
 Credit categorisation
+Edit, merge, and delete categories
+Autocompleting category suggestions
 Ability to change user account name
 Categorisation undo option
 Ability to browse raw data between dates, or month-by-month to correct categories

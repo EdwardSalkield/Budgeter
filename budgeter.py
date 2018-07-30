@@ -4,6 +4,9 @@ import os
 import userClass
 import browser
 import sys
+from datetime import datetime
+import copy
+import collections
 
 USERDATA = "./userdata/"
 OPTIONSEXTENSION = ".json"
@@ -13,7 +16,7 @@ fb = browser.FileBrowser(os.getcwd())
 
 
 def titlebar():
-    txt = urwid.Text("Budgeter v0.1          © Edward Salkield 2018")
+    txt = urwid.Text("Budgeter v0.2          © Edward Salkield 2018")
     return urwid.Pile([txt, urwid.Divider()])
 
 def menu_button(caption, callback, user_data=None):
@@ -225,8 +228,105 @@ def file_browser(freturn):
             back_button()
         ]))
 
-            
     return menu
+
+
+def get_balances():
+    balances = {}
+    for no, name in user.options['accounts'].items():
+        balances[name + " (" + no + ")"] = user.getBalance(no, datetime.now())
+    return balances
+
+def gen_balances():
+    items = []
+    for k, v in get_balances().items():
+        items.append(urwid.Text(k + ": " + user.options['currency'] + str(v)))
+
+    text = urwid.Text("Account breakdown:")
+
+    return urwid.Pile([text] + items)
+        
+
+
+
+
+
+
+def gen_budget_viewer():
+    edit_from = urwid.Edit("From:  ", bviewer.from_date)
+    edit_until = urwid.Edit("Until: ", bviewer.until_date)
+    
+
+    def search(button):
+        #try:
+        try:
+            from_date = datetime.strptime(bviewer.from_date, user.options['dateformat'])
+            until_date = datetime.strptime(bviewer.until_date, user.options['dateformat'])
+        except Exception:
+            top.errormsg("Invalid date format. Should be: " + user.options['dateformat'] + ". This can be changed in the \"Options\" menu.")
+
+        #except Exception:
+        budget = user.getBudgetBreakdown(from_date, until_date, bviewer.selected_categories, bviewer.selected_accounts)
+        def keyf(x):
+            (k, v) = x
+            return v
+
+        orderedbudget = collections.OrderedDict(sorted(budget.items(), key=keyf, reverse=True))
+
+        # Display budget breakdown
+        breakdown = []
+        for cat, x in orderedbudget.items():
+            breakdown.append(urwid.Text(cat + ": " + str(x)))
+
+        bviewer.breakdown = breakdown
+
+        top.refresh_current_menu()
+
+            
+        
+    # (No., name) pairs
+    account_select = []
+    account_select.append(urwid.Text("Accounts:"))
+    for no, name in user.options['accounts'].items():
+        state = no in bviewer.selected_accounts
+        account_select.append(urwid.CheckBox(name + " (" + no + ")", state=state, on_state_change=bviewer.change_account, user_data=no))
+
+    category_select = []
+    category_select.append(urwid.Text("Categories:"))
+    for cat in sorted(user.options["categories"]):
+        state = cat in bviewer.selected_categories
+        category_select.append(urwid.CheckBox(cat, state=state, on_state_change=bviewer.change_category, user_data=cat))
+
+    def update_text(edit, text, which):
+        if which == "from":
+            from_text = text
+            top.msgbox("from", bviewer.from_date)
+        elif which == "until":
+            until_text = text
+            top.msgbox("until", bviewer.until_date)
+
+
+    urwid.connect_signal(edit_from, 'change', update_text, "from")
+    urwid.connect_signal(edit_from, 'change', update_text, "until")
+
+    return urwid.ListBox(urwid.SimpleFocusListWalker(account_select + [urwid.Divider()] + category_select + \
+        [
+            urwid.Divider(),
+            edit_from,
+            edit_until,
+            urwid.Divider(),
+            menu_button("Go!", search),
+            urwid.Divider(),
+            urwid.Text("Breakdown:")
+        ] + bviewer.breakdown + \
+        [
+            urwid.Divider(),
+            back_button()
+        ]
+    ))
+
+
+    
 
 
 def gen_main_menu(button=None):
@@ -239,13 +339,17 @@ def gen_main_menu(button=None):
 
     menu_top = menu(u'Main Menu', [
         urwid.Text(welcomemessage),
+        urwid.Divider(),
+        gen_balances(),
+        urwid.Divider(),
         general_sub_menu(u'New/Change User', gen_user_menu),
         general_sub_menu(u'Import New Data', file_browser(addData)),
-        sub_menu(u'View Budgets', []),
+        general_sub_menu(u'View Budgets', gen_budget_viewer),
         sub_menu(u'Options', [
             menu_button(u'Change Default Currency', item_chosen),
             menu_button(u'Change Default User', item_chosen)
         ]),
+        sub_menu(u'Manage categories', []),
         sub_menu(u'UI Test', [
             testmsgbox("Header", "message"),
             testerrormsg("Error message"),
@@ -293,8 +397,8 @@ class PaneSelector(urwid.WidgetPlaceholder):
         self.change_window(box)
 
     def refresh_current_menu(self):
-        if callable(current_refresh_callback):
-            self.original_widget = current_refresh_callback()
+        if callable(self.current_refresh_callback):
+            self.original_widget = self.current_refresh_callback()
 
 
     def msgbox(self, header, msg):
@@ -365,6 +469,40 @@ class PaneSelector(urwid.WidgetPlaceholder):
 
 user = userClass.User(USERDATA, OPTIONSEXTENSION, DATAEXTENSION)       # Currently active user
 user.load_default()
+
+
+
+class BudgetBrowser():
+    breakdown = [urwid.Text("[Blank - select 'Go!' to search]")]
+    selected_accounts = copy.deepcopy(user.options['accounts']).keys()
+    selected_categories = user.options['categories']
+    until_date = datetime.strftime(datetime.now(), user.options['dateformat'])
+    from_date = datetime.strftime(datetime.strptime("01/01/1970", "%d/%m/%Y"), "%d/%m/%Y")
+
+    def reset(self):
+        selected_accounts = []
+        selected_categories = []
+
+
+    def change_account(self, checkbox, state, no):
+        if state:
+            self.selected_accounts.append(no)
+        else:
+            self.selected_accounts.remove(no)
+        
+
+    def change_category(self, checkbox, state, cat):
+        if state:
+            self.selected_categories.append(cat)
+        else:
+            self.selected_categories.remove(cat)
+        
+
+
+
+
+
+bviewer = BudgetBrowser()
 
 top = PaneSelector(gen_main_menu)
 ui = urwid.Frame(top, header=titlebar())

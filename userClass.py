@@ -33,6 +33,7 @@ def debug(msg):
 class User:
     default_options = {
         'accounts': {},
+        'categories': [],
         'dupratio': 0.2,
         'fields': ['Transaction Date', 'Transaction Type', 'Sort Code', 'Account Number', 'Transaction Description', 'Debit Amount', 'Credit Amount', 'Balance', 'Category'],
         'currency': '£',
@@ -242,6 +243,11 @@ class User:
         if not os.path.isfile(newcsvlocation):
             self.errormsg("No .csv file found at " + newfile + ".")
 
+        # Create new categories
+        categories = list(set(transaction_dict.values()))
+        for cat in categories:
+            self.options['categories'].append(cat)
+
         tempfile = NamedTemporaryFile(mode='w', delete=False)
 
         with open(newcsvlocation, newline='') as newcsvfile:
@@ -276,11 +282,16 @@ class User:
                         self.options['accounts'][accno] = account_dict[accno]
                         self.saveOptions()
 
+
                 for row in duprows:
                     writer.writerow(row)
                 
                 for row in rows:
+                    if transaction_dict[row['Transaction Description']] != '':
+                        row['Category'] = transaction_dict[row['Transaction Description']]
+
                     writer.writerow(row)
+
                     
             self.msgbox("Alert", "Writing changes...")
             shutil.move(tempfile.name, self.csvlocation)
@@ -307,35 +318,13 @@ class User:
             return mode
 
 
-    # Categorises data in the main spreadsheet
-    def categorise(self):
-        tempfile = NamedTemporaryFile(mode='w', delete=False)
-
-        self.options['fields'] = ['Transaction Date', 'Transaction Type', 'Sort Code', 'Account Number', 'Transaction Description', 'Debit Amount', 'Credit Amount', 'Balance', 'Category']
-
-        with open(self.csvlocation, 'r') as csvfile, tempfile:
-            reader0 = csv.DictReader(csvfile, fieldnames=self.options['fields'])
-            reader0, reader = tee(reader0)
-            writer = csv.DictWriter(tempfile, fieldnames=self.options['fields'])
-            for row in reader:
-                if row['Category'] == '':
-                    reader0, categoryreader = tee(reader0)
-                    tdesc = row['Transaction Description']
-                    ttype = row['Transaction Type']
-
-                    category = self.categorylookup(categoryreader, tdesc, ttype)
-                    row['Category'] = category
-                writer.writerow(row)
-
-        shutil.move(tempfile.name, self.csvlocation)
-
-
     # Functions to search through spreadsheet data
-    # Returnss all rows from main.csv that satisfy filterrow
+    # Returns all rows from main.csv that satisfy filterrow
     def getRows(self, filterrow):
         rows = []
         with open(self.csvlocation, 'r') as csvfile:
             reader = csv.DictReader(csvfile, fieldnames=self.options['fields'])
+            next(reader)
             for row in reader:
                 if filterrow(row):
                     rows.append(row)
@@ -344,11 +333,14 @@ class User:
 
     # Returns the row immediately before a given time
     def getRowAtTime(self, accno, time):
-        try:
-            date = datetime.strptime(time, self.options['dateformat'])
-        except Exception:
-            self.errormsg("Invalid date")
-            return
+        if isinstance(time, str):
+            try:
+                date = datetime.strptime(time, self.options['dateformat'])
+            except Exception:
+                self.errormsg("Invalid date")
+                return
+        else:
+            date = time
 
         upDate = datetime(1970, 1, 1)
 
@@ -378,4 +370,56 @@ class User:
             return None
         else:
             return row['Balance']
+
+    def acc_name_to_no(self, name):
+        for k, v in self.options['accounts'].items():
+            if v == name:
+                return k
+        return None
+
+    def acc_no_to_name(self, no):
+        return self.options['accounts'][no]
+
+
+
+    # Get the rows that exist between given dates, from given accounts and categories
+    # [datetime1, datetime2]
+    def getBudgetRows(self, datetime1, datetime2, cats, accs):
+        def bfilter(row):
+            accfilter = row['Account Number'] in accs
+
+            catfilter = row['Category'] in cats
+
+            satisfies = \
+                datetime.strptime(row['Transaction Date'], self.options['dateformat']) >= datetime1 and \
+                datetime.strptime(row['Transaction Date'], self.options['dateformat']) <= datetime2 and \
+                accfilter and catfilter
+            return satisfies
+
+        return self.getRows(bfilter)
+
+    # All accs if accs left []
+    def getBudgetBreakdown(self, datetime1, datetime2, cats, accs):
+        budget = {}
+
+        for cat in cats:
+            budget[cat] = 0
+
+        rows = self.getBudgetRows(datetime1, datetime2, cats, accs)
+        for row in rows:
+            if row['Debit Amount'] == '':
+                debit = 0
+            else:
+                debit = float(row['Debit Amount'])
+
+
+            if row['Credit Amount'] == '':
+                credit = 0
+            else:
+                credit = float(row['Credit Amount'])
+
+
+            budget[row['Category']] += debit + credit
+
+        return budget
 
